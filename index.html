@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+    <title>Chat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Tangerine', serif;
+            font-size: 48px;
+        }
+
+        form {
+
+            padding: 3px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+
+        form input {
+            border: 0;
+            padding: 10px;
+            width: 50%;
+            margin-right: 0%;
+        }
+
+        form button {
+            width: 9%;
+            background: rgb(130, 224, 255);
+            border: none;
+            padding: 10px;
+        }
+
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #messages li {
+            padding: 5px 10px;
+        }
+
+        #messages li:nth-child(odd) {
+            background: #eee;
+        }
+        #result{
+            height: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            box-shadow: 0 0 10px 0 #bbb;
+            margin-bottom: 30px;
+            font-size: 14px;
+            line-height: 25px;
+        }
+
+        .select-chat{
+            display: inline-block;
+        }
+
+        .user-data {
+            display: inline-block;
+        }
+    </style>
+</head>
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Tangerine">
+<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.6.1/css/font-awesome.min.css" />
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+
+<body>
+    <div class="user-data">
+        <h5>Bienvenido <span id="userName"></span>! Selecciona un chat:</h5>
+    </div>
+    <div class="select-chat">
+
+    </div>
+    <ul id="messages"></ul>
+    <form class="form-group" action="">
+        <input id="m" autocomplete="off"/>
+        <button type="button" class="btn btn-info">Enviar</button>
+		<button type="button" onclick="startConverting();"><i class="fa fa-microphone"></i></button>
+    </form>
+
+<script>
+    var MESSAGES_TYPE = {
+        CHAT: "chat",
+        CONNECTION: "connection_user",
+        SELECT_ROOM: "select_room"
+    };
+    var socket = io();
+    var connectedUser = null;
+    var currentChat = null;
+    var r = document.getElementById('m');
+
+    function startConverting () {
+        if('webkitSpeechRecognition' in window){
+            var speechRecognizer = new webkitSpeechRecognition();
+            speechRecognizer.continuous = true;
+            speechRecognizer.interimResults = true;
+            speechRecognizer.lang = 'es-CO';
+            speechRecognizer.start();
+
+            var finalTranscripts = '';
+
+            speechRecognizer.onresult = function(event){
+                var interimTranscripts = '';
+                for(var i = event.resultIndex; i < event.results.length; i++){
+                    var transcript = event.results[i][0].transcript;
+                    transcript.replace("\n", "<br>");
+                    if(event.results[i].isFinal){
+                        finalTranscripts += transcript;
+                    }else{
+                        interimTranscripts += transcript;
+                    }
+                }
+                r.value = finalTranscripts  + interimTranscripts ;
+            };
+            speechRecognizer.onerror = function (event) {
+            };
+        }else{
+            r.value = 'Your browser is not supported. If google chrome, please upgrade!';
+        }
+    }
+			
+    $(function () {
+        $('form').submit(function () {
+            currentChat = $(".select-users").val();
+            var chatMessage = {
+                destination: currentChat,
+                origin: connectedUser,
+                message: $('#m').val()
+            };
+            socket.emit(MESSAGES_TYPE.CHAT, chatMessage);
+            $('#m').val('');
+            return false;
+            
+        });
+        socket.on(MESSAGES_TYPE.CHAT, function (msg) {
+            currentChat = $(".select-users").val();
+            if (msg.destination === "Global" && currentChat === "Global") {
+                var text = msg.origin + ": " + msg.message;
+                $('#messages').append($('<li>').text(text));
+            } else if (msg.origin === currentChat || msg.origin === connectedUser) {
+                var text = msg.origin + ": " + msg.message;
+                $('#messages').append($('<li>').text(text));
+            }            
+        });
+
+        socket.on(MESSAGES_TYPE.CONNECTION, function (msg) {
+            var select = $('<select/>').addClass("select-users");
+            select.append($('<option/>').html("Global"));
+            for (var i = 0; i < msg.length; i++) {
+                var userTemp = msg[i];
+                if (userTemp !== connectedUser) {
+                    select.append($('<option/>').html(msg[i]));
+                }
+            }
+            $('.select-chat').html(select);
+        });
+
+        socket.on(MESSAGES_TYPE.SELECT_ROOM, function (msg) {
+             $('#messages').innerHTML='';
+            for (var i = 0; i < msg.length; i++) {
+                var text = msg[i].origin + ": " + msg[i].message;
+                $('#messages').append($('<li>').text(text));
+            }
+
+        });
+
+    });
+    $(document).ready(function () {
+        $(window).load(function () {
+            connectedUser = prompt("Ingrese su nombre de usuario");
+            $("#userName").html(connectedUser);
+            socket.emit(MESSAGES_TYPE.CONNECTION, {userName: connectedUser});
+        });
+
+        $('body').on('change', ".select-users", function (e) {
+            currentChat = $(".select-users").val();
+            $('#messages').html("");
+            $('#messages').append($('<li>').text("Cambio de sala a: " + currentChat));
+            socket.emit(MESSAGES_TYPE.SELECT_ROOM, {origin: connectedUser, destination: currentChat});
+        });
+    });
+    
+</script>
+</body>
+</html>
